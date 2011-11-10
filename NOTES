@@ -1,0 +1,47 @@
+- could refactor so that we keep track of encoder state in a struct allowing
+  for progressive updates.  
+
+  This would help with implementing the markov-chain stuff, since this amounts
+  to flipping the cdf between symbols.
+
+  Also, the state could keep track of other, optional, features.  For instace,
+    
+    1.  If some intermediate symbol translation was applied to sort symbols in
+        probabillity order, the translation could be tracked internally.  
+
+    2.  If the CDF was computed on the fly (rather than provided), a simplified
+        interface could be provided.
+
+- does the length of the output string need to be known for decoding?
+
+  It seems so, since the length of the input string is treated as variable.  It
+  may be that you only overflow on the last symbol, so input overlow could be
+  used as a flag to stop after the last symbol is output.
+
+  Otherwise, may (optionally) want to insert an END symbol into the input
+  stream.
+
+- minimum probability limitations
+  and other scaling with the number of symbols M.
+
+  need p(s)>D^(1-P) where
+
+    p(s) is the probability of a symbol s.
+    D    is the number of output symbols.
+    P    us the number of active output symbols.
+
+  For a string of length N, a symbol present in that string has p(s)>=1/N.  The
+  problem may be that, on decode, P-1 output symbols are read in to construct
+  the code value, V, which has a finite bit depth.  
+
+  <If I understood the integer arithmetic implementation, the answer might come
+   much more easily to me>
+
+ - The byte stream and the cdf are required for encoding and decoding.  The cdf
+   could be thought of as a key.
+   
+   For 32 bit symbols, the CDF is 2^32 * sizeof(*cdf) long!.  Could try to 
+   compress the cdf...this would create a chain of keys...
+
+ - Figure 2.2 in Amir Said's whitepaper, shows how to encode to an arbirary
+   alphabet, which would be useful for storing blobs in ASCII text files.
