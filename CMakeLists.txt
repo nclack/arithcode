@@ -7,5 +7,5 @@ include_directories(src)
 #  Targets
 ###############################################################################
 
-  file(GLOB SOURCES src/*.h src/*.c)
+  file(GLOB SOURCES src/2/*.h src/2/*.c)
   add_executable(test app/test.c ${SOURCES})

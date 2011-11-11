@@ -25,3 +25,5 @@ void cdf_build(real **cdf, size_t *nsym, u32 *s, size_t ns);
 void encode(u8 **out, size_t *nout, u32 *in, size_t nin, real *cdf, size_t nsym);
 void decode(u32 *out, size_t nout, u8 *in, size_t nin, real *c, size_t nsym);
 
+// encode to a given number of symbols, noutsym
+//void vencode(u8 **out, size_t *nout, size_t noutsym, u32 *in, size_t nin, size_t ninsym, real *cdf);

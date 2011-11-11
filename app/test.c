@@ -3,13 +3,12 @@
 
 #define countof(e) (sizeof(e)/sizeof(*(e)))
 
-void pcode(bits_t *b)
-{ size_t n = b->ibyte+1,
-         i,j;
+void pcode(u8 *out, size_t nout)
+{ size_t i,j;
   printf("Code:\n");
-  for(i=0;i<n;++i)
-  { for(j=0;j<4 && i<n;j++,i++)
-      printf(" %x",b->d[i]);
+  for(i=0;i<nout;++i)
+  { for(j=0;j<4 && i<nout;j++,i++)
+      printf(" %x",out[i]);
     --i;
     printf("\n");
   }
@@ -32,15 +31,16 @@ int main(int argc, char* argv[])
 { u32  s[] = {2,1,0,0,1,3},
        t[1024];
   real c[] = {0.0, 0.2, 0.7, 0.9, 1.0};
-  bits_t out = {0};
+  u8    *out = NULL;
+  size_t nout = 0;
 
   pmsg(s,countof(s));
-  encode(&out,s,countof(s),c,countof(c));
-  pcode(&out);
-  decode(t,countof(s),out.d,out.ibyte+1,c,countof(c)-1);
+  encode(&out,&nout,s,countof(s),c,countof(c)-1);
+  pcode(out,nout);
+  decode(t,countof(s),out,nout,c,countof(c)-1);
   pmsg(t,countof(s));
 
-  free(out.d);
+  free(out);
   return 0;
 }
 

@@ -50,6 +50,7 @@
 #include <stdlib.h> // for size_t
 #include <stdio.h>  // for exception handling
 #include <string.h> // for memset
+#include <math.h>   // for pow
 
 typedef uint8_t   u8;
 typedef uint32_t  u32;
@@ -75,7 +76,7 @@ typedef float     real;
 //   encode and decode on the same stream; Can't interleave push/pop.
 //
 typedef struct _stream_t
-{ size_t nbtyes; //capacity
+{ size_t nbytes; //capacity
   size_t ibyte;  //current byte
   u8*    d;      //data
   int    own;    //ownship flag: should this object be responsible for freeing d
@@ -104,7 +105,7 @@ Error:
 static
 void maybe_resize(stream_t *s)
 { if(s->ibyte>=s->nbytes)
-    TRY(*d = realloc(*d,s->nbytes=(1.2*s->ibyte+50)));
+    TRY(s->d = realloc(s->d,s->nbytes=(1.2*s->ibyte+50)));
   return;
 Error:
   abort();
@@ -112,7 +113,7 @@ Error:
 
 static
 void push(stream_t *self, u8 v)
-{ 
+{ printf("Push: %x"ENDL,v);
   self->d[self->ibyte] = v;
   self->ibyte++;
   maybe_resize(self);
@@ -128,11 +129,11 @@ static u8 pop(stream_t *self)
 // Encoder/Decoder state
 //
 
-struct _state_t
+typedef struct _state_t
 { u64      b,l,v;
   stream_t d;
   size_t   nsym;
-  u64      D,P,shift,mask;
+  u64      D,P,shift,mask; // P unused?
   u64     *cdf;
 } state_t;
 
@@ -141,12 +142,12 @@ void init(state_t *state,u8 *buf,size_t nbuf,real *cdf,size_t nsym)
 {
   memset(state,0,sizeof(*state));
   
-  state->D = 1<<(8*sizeof(*out));
-  state->P = sizeof(u64)/sizeof(*out)/2; // need 2P for multiplies
-  TRY(shift->P > 2); // see requirement induced by eselect()
-  state->shift = state->P * 8 * sizeof(*out);
+  state->D = 1ULL<<(8*sizeof(*buf));
+  state->P = sizeof(u64)/sizeof(*buf)/2; // need 2P for multiplies
+  TRY(state->P > 2); // see requirement induced by eselect()
+  state->shift = state->P * 8 * sizeof(*buf);
 
-  state->l = (1<<state->shift)-1; // e.g. 2^32-1 for u64
+  state->l = (1ULL<<state->shift)-1; // e.g. 2^32-1 for u64
   state->mask = state->l;         // for modding a u64 to u32 with &
 
   TRY( state->cdf=malloc(nsym*sizeof(*state->cdf)) );
@@ -154,10 +155,12 @@ void init(state_t *state,u8 *buf,size_t nbuf,real *cdf,size_t nsym)
     real s = pow(2,state->shift);
     for(i=0;i<nsym;++i)
       state->cdf[i] = s*cdf[i];
+    state->nsym = nsym;
   }
 
   attach(&state->d,buf,nbuf);
   maybe_init(&state->d); // in case buf is NULL (for encoding)
+  return;
 Error:
   abort();
 }
@@ -207,14 +210,15 @@ Error:
 #define SHIFT   (state->shift)
 #define NSYM    (state->nsym)
 #define MASK    (state->mask)
-#define STREAM  (state->d)
-#define DATA    (state->d->d)
+#define STREAM  (&(state->d))
+#define DATA    (state->d.d)
 #define bitsofD (8)
-#define D       (1<<bitsofD(D))
+#define D       (1ULL<<bitsofD)
+#define P       (state->P)
 
 static
 void carry(state_t *state)
-{ size_t n = STREAM->ibyte;
+{ size_t n = STREAM->ibyte-1; // point to last written symbol
   while( DATA[n]==(D-1) )
     DATA[n--]=0;
   DATA[n]++;
@@ -225,10 +229,10 @@ void update(u32 s,state_t *state)
 { u64 a,x,y;
   // end of interval
   y = L;
-  if(s!=NSYM-1) //is not last symbol
-    y = (y*CDF[s+1])>>SHIFT;
+  if(s!=(NSYM-1)) //is not last symbol
+    y = (y*C[s+1])>>SHIFT;
   a = B;
-  x = L*CDF[s])>>SHIFT;
+  x = (L*C[s])>>SHIFT;
   B = (B+x)&MASK;
   L = y-x;
   if(a>B)
@@ -237,46 +241,44 @@ void update(u32 s,state_t *state)
 
 
 static
-void erenorm(state_t &state)
-{ const u64 lowl = 1<<(SHIFT-1);
+void erenorm(state_t *state)
+{ const u64 lowl = 1ULL<<(SHIFT-bitsofD);
+  const int s = SHIFT-bitsofD;
   while(L<lowl)
-  { push(STREAM, B>>(SHIFT-1) ); // push top bits off of B.  D=2^8,1-P=1-4=-3,D^(1-P)=(2^8)^(-3)=2^-24
+  { push(STREAM, B>>s ); // push top bits off of B.
     L = (L<<bitsofD)&MASK;
     B = (B<<bitsofD)&MASK;
   }
 }
                                 
 static 
-void eselect(state_t &state);
+void eselect(state_t *state)
 { u64 a;
   a=B;
-  B=(B+(1<<(SHIFT-bitsofD-1)))&MASK; // D^(P-1)/2: (2^8)^(4-1)/2 = 2^24/2 = 2^23 = 2^(32-8-1)
-  L=(1<<(bitsofD*(P-2)))-1;          // requires P>2
+  B=(B+(1ULL<<(SHIFT-bitsofD-1)) )&MASK; // D^(P-1)/2: (2^8)^(4-1)/2 = 2^24/2 = 2^23 = 2^(32-8-1)
+  L=(1ULL<<(SHIFT-2*bitsofD))-1;         // requires P>2
   if(a>B)
     carry(state);
-  erenorm(state);
+  erenorm(state);                        // output last 2 symbols
 }
 
 static
 void estep(state_t *state,u32 s)
-{ const u64 lowl = 1<<(SHIFT-1); 
-  update(s,&state);
+{ const u64 lowl = 1ULL<<(SHIFT-bitsofD); 
+  update(s,state);
   if(L<lowl)
-    erenorm(&state);
+    erenorm(state);
 }
 
 void encode(u8 **out, size_t *nout, u32 *in, size_t nin, real *cdf, size_t nsym)
-{ real   b=0.0, // beginning of the interval
-         l=1.0; // length of the interval
-  size_t i;
-  state_t state;
-  init(&state,out,nout,cdf,nsym);   
-  for(i=0;i<N;++i)
-    estep(in[i],&state);
-  eselect(&state);
-  // FIXME: cleanup and output
+{ size_t i;
+  state_t s,*state=&s;
+  init(state,*out,*nout,cdf,nsym);   
+  for(i=0;i<nin;++i)
+    estep(state,in[i]);
+  eselect(state);
   *out  = DATA;
-  *nout = state->d->ibyte+1;
+  *nout = STREAM->ibyte; // ibyte points one past last written byte
   free_internal(state);
 }
 
@@ -293,7 +295,7 @@ u32 dselect(state_t *state, u64 *v)
   n = NSYM;
   x = 0;
   y = L;
-  while( (n-s)>1 )   // bisection search
+  while( (n-s)>1UL )   // bisection search
   { u32 m = (s+n)>>1;
     u64 z = (L*C[m])>>SHIFT;
     if(z>*v)
@@ -307,8 +309,8 @@ u32 dselect(state_t *state, u64 *v)
 }
 
 static
-void drenorm(real *v,real *b, real *l, stream_t *in)
-{ const u64 lowl = 1<<(SHIFT-1);
+void drenorm(state_t *state, u64 *v)
+{ const u64 lowl = 1ULL<<(SHIFT-bitsofD);
   while(L<lowl)
   { *v = ((*v<<bitsofD)&MASK)+pop(STREAM);
     L =   ( L<<bitsofD)&MASK;
@@ -316,19 +318,21 @@ void drenorm(real *v,real *b, real *l, stream_t *in)
 }
 
 void decode(u32 *out, size_t nout, u8 *in, size_t nin, real *c, size_t nsym)
-{ state_t state;
+{ state_t s,*state=&s;
   u64 v=0;
   size_t i;
-  const u64 lowl = 1<<(SHIFT-1);  
+  const u64 lowl = 1ULL<<(SHIFT-bitsofD);
 
-  init(&state,in,nin,c,nsym);
+  init(state,in,nin,c,nsym);
   // Prime the pump
-  for(i=bitsofD;i<=SHIFT;++bitsofD) // 8,16,24,32
-    v = (1<<(SHIFT-i))*pop(STREAM); //(2^8)^(P-n) = 2^(8*(P-n))
+  for(i=bitsofD;i<=SHIFT;i+=bitsofD) // 8,16,24,32
+    v += (1ULL<<(SHIFT-i))*pop(STREAM); //(2^8)^(P-n) = 2^(8*(P-n))
 
   for(i=0;i<nout;++i)
-  { out[i] = dselect(&state,&v);
+  { out[i] = dselect(state,&v);
     if( L<lowl )
-      drenorm(&state,&v);
+      drenorm(state,&v);
   }
+  free_internal(state);
 }
+
