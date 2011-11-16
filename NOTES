@@ -45,3 +45,12 @@
 
  - Figure 2.2 in Amir Said's whitepaper, shows how to encode to an arbirary
    alphabet, which would be useful for storing blobs in ASCII text files.
+
+TESTING
+-------
+
+- encode/decode random strings
+  check for self consistency
+
+- what are edge cases for inputs?
+  e.g. what would require all the symbols to carry?

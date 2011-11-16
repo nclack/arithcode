@@ -36,6 +36,64 @@
  *
  * Notes
  * -----
+ * - Should support encoding input and decoding output of different types.
+ *   (Not all u32)
+ *
+ * - Need variably sized streams for other sizes of D.  Right now only u8
+ *   supported.  vencode is limited to D<256.
+ *
+ * - should try automatically using an end-of-stream symbol.
+ *   Give it the minimum assignable probability.
+ *   Could do this without modifying CDF by changing
+ *   encoder/update and decoder/dselect functions appropriately.
+ *
+ *   - nsym'   <- nsym+1
+ *   - pdf[s]' <- pdf[s]*nsym/(nsym+1)        ; s<nsym
+ *   =>
+ *   - cdf[s]' <- cumsum(pdf,s)*nsym/(nsym+1)
+ *   - cdf[s]' <- cdf[s-1]+1 (post scaling)   ; s=nsym
+ *
+ *   o Using binary search lookup on decode, so just tack the END
+ *     symbol onto the end.
+ *
+ *     - add a special estep_end
+ *     - dstep must return a flag indicating the end, which is used to 
+ *       terminate the decode loop.
+ *
+ *   o Could use a "virtual" symbol that doesn't take up any symbol space bit
+ *     on the unencoded stream (that is, for a u8 input all 255 symbols could be
+ *     used; the 'end' symbol wouldn't require you go to a 16-bit input).  This
+ *     would require using a wide symbol register on the decode step.
+ *
+ *   o COST of the end symbol?
+ *     entropy was -sum(p log2 p) and is lower bound of expected bits/symbol
+ *     now -sum(p*c log2 p) - sum( p*c log2 c ) - D^(1-P) log2 (D^(1-P))
+ *         where c = n/(n+1)
+ *         if D = 2^d, and c~1,
+ *           -sum(p log2 p) - (d-d*P) * 2^(d-d*P)
+ *         for d=8,P=4: extra entropy is
+ *           24*2^-24 = 3*2^-16 bits?  -- doesn't seem right
+ *     upper bound is entropy + overhead/N, where N is the number of symbols to
+ *         code.
+ *
+ *    -- my guess is it adds log2 D^(1-P) bits.  That's at least true for an
+ *       empty input stream;  The first decoded value has to be that end D^(1-P)
+ *       interval.
+ *          
+ *
+ * - might be nice to add an interface that will encode chunks.  That is,
+ *   you feed it symbols one at a time and every once in a while, when
+ *   bits get settled, it outputs some bytes.
+ *
+ *   For streaming encoders, this would mean the intermediate buffer 
+ *   wouldn't have to be quite as big, although worst case that
+ *   buffer is the size of the entire output message.
+ *   
+ *   Example use:
+ *
+ *     foreach(s in input)
+ *       for(i=0;i<encode_one(state,s,buf);++i)
+ *         do something with buf[i]; 
  *
  * References
  * ----------
@@ -60,7 +118,7 @@ typedef float     real;
 #define ENDL "\n"
 #define TRY(e) \
   do{ if(!(e)) {\
-    printf("%s(%d):"ENDL "%s"ENDL "Expression evaluated as false."ENDL, \
+    printf("%s(%d):"ENDL "\t%s"ENDL "\tExpression evaluated as false."ENDL, \
         __FILE__,__LINE__,#e); \
     goto Error; \
   }} while(0)
@@ -82,16 +140,14 @@ typedef struct _stream_t
   int    own;    //ownship flag: should this object be responsible for freeing d
 } stream_t;
 
-static
-void attach(stream_t *self, u8* d, size_t n)
+static void attach(stream_t *self, u8* d, size_t n)
 { if(self->own) SAFE_FREE(self->d);
   self->d = d;
   self->own = 0;
   self->nbytes = n;
 }
 
-static
-void maybe_init(stream_t *self)
+static void maybe_init(stream_t *self)
 { if(!self->d)
   { memset(self,0,sizeof(*self));
     TRY(self->d=malloc(self->nbytes=4096));
@@ -102,8 +158,7 @@ Error:
   abort();
 }
 
-static
-void maybe_resize(stream_t *s)
+static void maybe_resize(stream_t *s)
 { if(s->ibyte>=s->nbytes)
     TRY(s->d = realloc(s->d,s->nbytes=(1.2*s->ibyte+50)));
   return;
@@ -111,9 +166,8 @@ Error:
   abort();
 }
 
-static
-void push(stream_t *self, u8 v)
-{ printf("Push: %x"ENDL,v);
+static void push(stream_t *self, u8 v)
+{ //printf("Push: %x"ENDL,v);
   self->d[self->ibyte] = v;
   self->ibyte++;
   maybe_resize(self);
@@ -133,22 +187,22 @@ typedef struct _state_t
 { u64      b,l,v;
   stream_t d;
   size_t   nsym;
-  u64      D,P,shift,mask; // P unused?
+  u64      D,shift,mask,lowl;
   u64     *cdf;
 } state_t;
 
-static
-void init(state_t *state,u8 *buf,size_t nbuf,real *cdf,size_t nsym)
-{
+static void init(state_t *state,u8 *buf,size_t nbuf,real *cdf,size_t nsym)
+{ int P;
   memset(state,0,sizeof(*state));
   
   state->D = 1ULL<<(8*sizeof(*buf));
-  state->P = sizeof(u64)/sizeof(*buf)/2; // need 2P for multiplies
-  TRY(state->P > 2); // see requirement induced by eselect()
-  state->shift = state->P * 8 * sizeof(*buf);
+  P = sizeof(u64)/sizeof(*buf)/2;    // need 2P for multiplies
+  TRY(P > 2);                        // see requirement induced by eselect()
+  state->shift = P * 8 * sizeof(*buf);
+  state->lowl = 1ULL<<(state->shift-8*sizeof(*buf)); 
 
   state->l = (1ULL<<state->shift)-1; // e.g. 2^32-1 for u64
-  state->mask = state->l;         // for modding a u64 to u32 with &
+  state->mask = state->l;            // for modding a u64 to u32 with &
 
   TRY( state->cdf=malloc(nsym*sizeof(*state->cdf)) );
   { size_t i;
@@ -165,16 +219,14 @@ Error:
   abort();
 }
 
-static 
-void free_internal(state_t *state)
+static  void free_internal(state_t *state)
 { SAFE_FREE(state->cdf);
 }
 
 //
 // Build CDF
 // 
-static
-u32 maximum(u32 *s, size_t n)
+static u32 maximum(u32 *s, size_t n)
 { u32 max=0;
   while(n--)
     max = (s[n]>max)?s[n]:max;
@@ -204,28 +256,27 @@ Error:
 // Encoder
 //
 
-#define B       (state->b)
-#define L       (state->l)
-#define C       (state->cdf)
-#define SHIFT   (state->shift)
-#define NSYM    (state->nsym)
-#define MASK    (state->mask)
-#define STREAM  (&(state->d))
-#define DATA    (state->d.d)
-#define bitsofD (8)
-#define D       (1ULL<<bitsofD)
-#define P       (state->P)
+#define B         (state->b)
+#define L         (state->l)
+#define C         (state->cdf)
+#define SHIFT     (state->shift)
+#define NSYM      (state->nsym)
+#define MASK      (state->mask)
+#define STREAM    (&(state->d))
+#define DATA      (state->d.d)
+#define OFLOW     (STREAM->overflow)
+#define bitsofD   (8)
+#define D         (1ULL<<bitsofD)
+#define LOWL      (state->lowl)
 
-static
-void carry(state_t *state)
+static void carry(state_t *state)
 { size_t n = STREAM->ibyte-1; // point to last written symbol
   while( DATA[n]==(D-1) )
     DATA[n--]=0;
   DATA[n]++;
 }
 
-static
-void update(u32 s,state_t *state)
+static void update(u32 s,state_t *state)
 { u64 a,x,y;
   // end of interval
   y = L;
@@ -235,24 +286,26 @@ void update(u32 s,state_t *state)
   x = (L*C[s])>>SHIFT;
   B = (B+x)&MASK;
   L = y-x;
+  TRY(L>0);
   if(a>B)
     carry(state);
+  return;
+Error:
+  abort();
 }
 
 
-static
-void erenorm(state_t *state)
-{ const u64 lowl = 1ULL<<(SHIFT-bitsofD);
+static void erenorm(state_t *state)
+{ 
   const int s = SHIFT-bitsofD;
-  while(L<lowl)
+  while(L<LOWL)
   { push(STREAM, B>>s ); // push top bits off of B.
     L = (L<<bitsofD)&MASK;
     B = (B<<bitsofD)&MASK;
   }
 }
-                                
-static 
-void eselect(state_t *state)
+
+static  void eselect(state_t *state)
 { u64 a;
   a=B;
   B=(B+(1ULL<<(SHIFT-bitsofD-1)) )&MASK; // D^(P-1)/2: (2^8)^(4-1)/2 = 2^24/2 = 2^23 = 2^(32-8-1)
@@ -262,11 +315,10 @@ void eselect(state_t *state)
   erenorm(state);                        // output last 2 symbols
 }
 
-static
-void estep(state_t *state,u32 s)
-{ const u64 lowl = 1ULL<<(SHIFT-bitsofD); 
+static void estep(state_t *state,u32 s)
+{ 
   update(s,state);
-  if(L<lowl)
+  if(L<LOWL)
     erenorm(state);
 }
 
@@ -282,12 +334,23 @@ void encode(u8 **out, size_t *nout, u32 *in, size_t nin, real *cdf, size_t nsym)
   free_internal(state);
 }
 
+void encode_u8(u8 **out, size_t *nout, u8 *in, size_t nin, real *cdf, size_t nsym)
+{ size_t i;
+  state_t s,*state=&s;
+  init(state,*out,*nout,cdf,nsym);   
+  for(i=0;i<nin;++i)
+    estep(state,in[i]);
+  eselect(state);
+  *out  = DATA;
+  *nout = STREAM->ibyte; // ibyte points one past last written byte
+  free_internal(state);
+}
+
 //
 // Decode
 //
 
-static
-u32 dselect(state_t *state, u64 *v)
+static u32 dselect(state_t *state, u64 *v)
 { u32 s,n;
   u64 x,y;
 
@@ -308,31 +371,102 @@ u32 dselect(state_t *state, u64 *v)
   return s;
 }
 
-static
-void drenorm(state_t *state, u64 *v)
-{ const u64 lowl = 1ULL<<(SHIFT-bitsofD);
-  while(L<lowl)
+static void drenorm(state_t *state, u64 *v)
+{ 
+  while(L<LOWL)
   { *v = ((*v<<bitsofD)&MASK)+pop(STREAM);
     L =   ( L<<bitsofD)&MASK;
   }
 }
 
+static void dprime(state_t *state, u64* v) // Prime the pump
+{
+  size_t i;
+  for(i=bitsofD;i<=SHIFT;i+=bitsofD) // 8,16,24,32
+    *v += (1ULL<<(SHIFT-i))*pop(STREAM); //(2^8)^(P-n) = 2^(8*(P-n))
+}
+
+static u32 dstep(state_t *state,u64 *v)
+{ 
+  u32 s = dselect(state,v);
+  if( L<LOWL )
+    drenorm(state,v);
+  return s;
+}
+
 void decode(u32 *out, size_t nout, u8 *in, size_t nin, real *c, size_t nsym)
 { state_t s,*state=&s;
   u64 v=0;
-  size_t i;
-  const u64 lowl = 1ULL<<(SHIFT-bitsofD);
+  size_t i=0;
 
   init(state,in,nin,c,nsym);
-  // Prime the pump
-  for(i=bitsofD;i<=SHIFT;i+=bitsofD) // 8,16,24,32
-    v += (1ULL<<(SHIFT-i))*pop(STREAM); //(2^8)^(P-n) = 2^(8*(P-n))
-
+  dprime(state,&v);
   for(i=0;i<nout;++i)
-  { out[i] = dselect(state,&v);
-    if( L<lowl )
-      drenorm(state,&v);
-  }
+    out[i]=dstep(state,&v);
   free_internal(state);
 }
 
+//
+// Variable output alphabet encoding
+//
+
+// can't quite do the whole thing symbol by symbol 
+// due to carries.  Ideally, I'd output a settled
+// symbol from the encoder when I could.  The carry
+// might not happen till the end though...that would
+// be the whole message!
+void vencode(u8 **out, size_t *nout, size_t noutsym, u32 *in, size_t nin, size_t ninsym, real *cdf)
+{ u8 *t=NULL;
+  size_t i,n=0;
+  real *tcdf;
+  TRY( tcdf=malloc(sizeof(*tcdf)*(noutsym+1)) );
+  { size_t i;
+    real v = 1.0/(real)noutsym;
+    for(i=0;i<=noutsym;++i)
+      tcdf[i] = i*v;
+  }
+  { state_t  s1;
+    stream_t d ={0};
+    u8 *buf=0;
+    u64 v;
+    n = 0;
+    encode(&buf,&n,in,nin,cdf,ninsym);  //first  encoding
+    d.d      = *out;
+    d.nbytes = *nout;
+    maybe_init(&d);
+    init(&s1,buf,n,tcdf,noutsym);       //decode with tcdf
+    dprime(&s1,&v);
+    for(i=0;i<100;++i)                    // FIXME: how to know how many symbols to decode?
+      push(&d,dstep(&s1,&v));             // what's the min length to recapitulate the orig. message?
+    *out  = d.d;
+    *nout = d.ibyte;
+    free_internal(&s1);
+    free(buf);
+  }
+  free(tcdf);
+  return;
+Error:
+  abort();
+} 
+
+void vdecode(u32 *out, size_t nout, size_t noutsym, u8 *in, size_t nin, size_t ninsym, real *cdf)
+{ u8 *t=NULL;
+  size_t i,n=0;
+  real *tcdf;
+  TRY( tcdf=malloc(sizeof(*tcdf)*(ninsym+1)) );
+  { size_t i;
+    real v = 1.0/(real)ninsym;
+    for(i=0;i<=ninsym;++i)
+      tcdf[i] = i*v;
+  }
+  { u8 *buf=0;
+    n = 0;
+    encode_u8(&buf,&n,in,nin,tcdf,ninsym); //encode with tcdf
+    decode(out,nout,buf,n,cdf,noutsym);
+    free(buf);
+  }
+  free(tcdf);
+  return;
+Error:
+  abort();
+}
