@@ -75,6 +75,7 @@ void decode_u64_u16(uint64_t **out, size_t *nout, void *in, size_t nin, real *cd
 
 // encode to a given number of symbols, noutsym
 // Currently limit noutsym to < 255.
+#if 0  // DOESN'T WORK - WASTE OF TIME
 void vencode_u8 (uint8_t  **out, size_t *nout, size_t noutsym, uint8_t  *in, size_t nin, size_t ninsym, real *cdf);
 void vencode_u16(uint8_t  **out, size_t *nout, size_t noutsym, uint16_t *in, size_t nin, size_t ninsym, real *cdf);
 void vencode_u32(uint8_t  **out, size_t *nout, size_t noutsym, uint32_t *in, size_t nin, size_t ninsym, real *cdf);
@@ -84,3 +85,4 @@ void vdecode_u8 (uint8_t  **out, size_t *nout, size_t noutsym, uint8_t  *in, siz
 void vdecode_u16(uint16_t **out, size_t *nout, size_t noutsym, uint8_t  *in, size_t nin, size_t ninsym, real *cdf);
 void vdecode_u32(uint32_t **out, size_t *nout, size_t noutsym, uint8_t  *in, size_t nin, size_t ninsym, real *cdf);
 void vdecode_u64(uint64_t **out, size_t *nout, size_t noutsym, uint8_t  *in, size_t nin, size_t ninsym, real *cdf);
+#endif

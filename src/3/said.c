@@ -57,6 +57,15 @@
  *   For streaming encoders, this would mean the intermediate buffer 
  *   wouldn't have to be quite as big, although worst case that
  *   buffer is the size of the entire output message.
+ *
+ * - A check-symbol could be encoded in a manner similar to the END-OF-MESSAGE
+ *   symbol.  For example, code the symbol every 2^x symbols and assign it a
+ *   probability of 2^-x.  If the decoder doesn't recieve one of these at the
+ *   expected interval, then there was some error.  For short messages, 
+ *   we wouldn't require the insertion of such a symbol; it's failure to show
+ *   up after N symbols would still indicate an error.  It would take space
+ *   on the interval, and so would have a negative impact on compression and 
+ *   minimum probability.
  *   
  * References
  * ----------
@@ -371,6 +380,7 @@ void decode_##TOUT##_##TIN(TOUT **out, size_t *nout, u8 *in, size_t nin, real *c
   }                                            \
   free_internal(&s);                           \
   detach(&d,(void**)out,nout);                 \
+  *nout /= sizeof(TOUT);                       \
 }
 #define DEFN_DECODE_OUTS(TIN) \
   DEFN_DECODE(u8,TIN);  \
@@ -398,9 +408,11 @@ void sync(stream_t *dest, stream_t *src)
 void vdecode1(u8 **out, size_t *nout, u8 *in, size_t nin, real *cdf, size_t nsym, real *tcdf, size_t tsym)
 { state_t d0,e1,d1;                                   
   stream_t d={0};                              
-  u64 v0,x,v1,x2;
+  u64 v0,x,v1;
   size_t i=0;                                  
   int isend=0;
+  void *temp=NULL; //temporary buffer for doing eselects
+  size_t ntemp=0;
   u64 buf[32]; // 32 > P
   u8  ibuf=0;
   attach(&d,*out,*nout);          
@@ -415,24 +427,33 @@ void vdecode1(u8 **out, size_t *nout, u8 *in, size_t nin, real *cdf, size_t nsym
   }
   sync(&d1.d,&e1.d);                 //make sure pointer for the second decoder stage is synced
   dprime_u8(&d1,&v1);
-  x2=dstep_u8(&d1,&v1,&isend);       //ignore the output, but use isend
-  i=0;                               // use i to count pushes
+  dstep_u8(&d1,&v1,&isend);          //ignore the output, but use isend
   while(!isend)                                
-  { push_u8(&d,buf[ibuf]);           //push value onto output stream
-    i++;
+  { 
+    push_u8(&d,buf[ibuf]);           //push value onto output stream
     buf[ibuf] = dstep_u8(&d0,&v0,&isend);
-    estep_u8(&e1,buf[ibuf]);
-    ibuf = (ibuf+1)&31;
-    sync(&d1.d,&e1.d);
-    x2=dstep_u8(&d1,&v1,&isend);
+    estep_u8(&e1,buf[ibuf]);       
+    ibuf = (ibuf+1)&31;               
+    sync(&d1.d,&e1.d);               //make sure pointer for the second decoder stage is synced
+    dstep_u8(&d1,&v1,&isend);         
   }
   // d1.d.ibyte is the number of encoded symbols required
-  for(;i<d1.d.ibyte;++i)
-  { push_u8(&d,buf[ibuf]);
-    ibuf = (ibuf+1)&31;
-  }
   detach(&d,(void**)out,nout);
-  *nout = d1.d.ibyte-1; // number of e1 outputs needed to hit end symbol
+  // FIXME: Still don't know how to reliably get <nout>
+  //        Why is d.ibyte always equal to <nin> from caller?
+  //        e1.d.ibyte will be some significant fraction of <nin>...
+  //            this is # of symbols put on encoder 
+  //            e1.d.ibyte is usually quite a bit larger than minimum required
+  //                       symbols
+  //        d1.d.ibyte is number of symbols taken off of e1
+  //
+  //        d : 798
+  //        d0: 168
+  //        e1: 680
+  //        d1: 170
+  //       act: 203 
+  //
+  *nout = e1.d.ibyte; // number of e1 outputs needed to hit end symbol
   { void *b;
     detach(&e1.d,&b,NULL);
     if(b) free(b);
@@ -487,7 +508,6 @@ void vdecode_##T(T **out, size_t *nout, size_t noutsym, u8 *in, size_t nin, size
     free(buf);                                         \
   }                                                    \
   free(tcdf);                                          \
-  *nout /= sizeof(T);                                  \
   return;                                              \
 Error:                                                 \
   abort();                                             \
