@@ -147,7 +147,7 @@ u8 pop_u4(stream_t *self)
   if(self->ibyte<self->nbytes)
     v = (self->d[self->ibyte] & m)>>(4-self->ibit);
   //inc
-  if(self->ibit=4)
+  if(self->ibit==4)
   { self->ibit=0;
     self->ibyte++;
   } else
@@ -162,11 +162,11 @@ MAX_TYPE(u32);
 MAX_TYPE(u64);
 
 #define DEFN_CARRY(T) \
-void carry_##T(stream_t *self)       \
-{ size_t n = self->ibyte-1;          \
-  while( *(T*)(self->d+n)==max_##T ) \
-    *(T*)(self->d+n--)=0;            \
-  (*(T*)(self->d+n))++;              \
+void carry_##T(stream_t *self)          \
+{ size_t n = (self->ibyte-1)/sizeof(T); \
+  while( ((T*)(self->d))[n]==max_##T )  \
+    ((T*)(self->d))[n--]=0;             \
+  ((T*)(self->d))[n]++;                 \
 }
 DEFN_CARRY(u8);
 DEFN_CARRY(u16);
