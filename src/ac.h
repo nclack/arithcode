@@ -92,6 +92,19 @@ void decode_u16_u16(uint16_t **out, size_t *nout, void *in, size_t nin, real *cd
 void decode_u32_u16(uint32_t **out, size_t *nout, void *in, size_t nin, real *cdf, size_t nsym);
 void decode_u64_u16(uint64_t **out, size_t *nout, void *in, size_t nin, real *cdf, size_t nsym);
 
+//
+// Variably sized encoding alphabet
+//
+
+void vencode_u8 (uint8_t  **out, size_t *nout, size_t noutsym, uint8_t  *in, size_t nin, size_t ninsym, real *cdf);
+void vencode_u16(uint8_t  **out, size_t *nout, size_t noutsym, uint16_t *in, size_t nin, size_t ninsym, real *cdf);
+void vencode_u32(uint8_t  **out, size_t *nout, size_t noutsym, uint32_t *in, size_t nin, size_t ninsym, real *cdf);
+void vencode_u64(uint8_t  **out, size_t *nout, size_t noutsym, uint64_t *in, size_t nin, size_t ninsym, real *cdf);
+
+void vdecode_u8 (uint8_t  **out, size_t *nout, size_t noutsym, uint8_t  *in, size_t nin, size_t ninsym, real *cdf);
+void vdecode_u16(uint16_t **out, size_t *nout, size_t noutsym, uint8_t  *in, size_t nin, size_t ninsym, real *cdf);
+void vdecode_u32(uint32_t **out, size_t *nout, size_t noutsym, uint8_t  *in, size_t nin, size_t ninsym, real *cdf);
+void vdecode_u64(uint64_t **out, size_t *nout, size_t noutsym, uint8_t  *in, size_t nin, size_t ninsym, real *cdf);
 #ifdef __cplusplus
 }
 #endif

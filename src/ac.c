@@ -206,6 +206,9 @@ Error:
 #define D         (1ULL<<bitsofD)
 #define LOWL      (state->lowl)
 
+void carry_null(stream_t *s) {} //no op
+void push_null(stream_t *s)  {s->ibyte++;}
+
 #define DEFN_UPDATE(T) \
   static void update_##T(u64 s,state_t *state) \
   { u64 a,x,y;                                \
@@ -227,6 +230,7 @@ DEFN_UPDATE(u1);
 DEFN_UPDATE(u4);
 DEFN_UPDATE(u8);
 DEFN_UPDATE(u16);
+DEFN_UPDATE(null);
 
 #define DEFN_ERENORM(T) \
 static void erenorm_##T(state_t *state) \
@@ -242,6 +246,15 @@ DEFN_ERENORM(u1); // typed by output stream type
 DEFN_ERENORM(u4);
 DEFN_ERENORM(u8);
 DEFN_ERENORM(u16);
+static void erenorm_null(state_t *state)
+{
+  const int s = SHIFT-bitsofD;
+  while(L<LOWL)
+  { push_null(STREAM);
+    L = (L<<bitsofD)&MASK;
+    B = (B<<bitsofD)&MASK;
+  }
+}
 
 #define DEFN_ESELECT(T) \
   static void eselect_##T(state_t *state)                                                                \
@@ -269,6 +282,7 @@ DEFN_ESTEP(u1); // typed by output stream type
 DEFN_ESTEP(u4);
 DEFN_ESTEP(u8);
 DEFN_ESTEP(u16);
+DEFN_ESTEP(null); // doesn't actually write to stream
 
 #define DEFN_ENCODE(TOUT,TIN) \
 void encode_##TOUT##_##TIN(void **out, size_t *nout, TIN *in, size_t nin, real *cdf, size_t nsym) \
@@ -385,3 +399,94 @@ DEFN_DECODE_OUTS(u4);
 DEFN_DECODE_OUTS(u8);
 DEFN_DECODE_OUTS(u16);
 
+//
+// Variable output alphabet encoding
+//
+//
+// can't quite do the whole thing symbol by symbol 
+// due to carries.  Ideally, I'd output a settled
+// symbol from the encoder when I could.  The carry
+// might not happen till the end though...that would
+// be the whole message!
+void sync(stream_t *dest, stream_t *src)
+{ dest->d      = src->d;
+  dest->nbytes = src->nbytes;
+}
+void vdecode1(u8 **out, size_t *nout, u8 *in, size_t nin, real *cdf, size_t nsym, real *tcdf, size_t tsym)
+{ state_t d0,e1;                                   
+  stream_t d={0};                              
+  int isend=0;
+  u64 v0;
+  attach(&d,*out,*nout);          
+  init_u8(&d0,in,nin,tcdf,tsym);            // the tcdf decode
+  init_u8(&e1, 0,  0,tcdf,tsym);            // the tcdf encode - used to check for end symbol
+
+  dprime_u8(&d0,&v0);
+  while(e1.d.ibyte<nin)                     // stop decoding when reencoding reproduces the input string
+  { u8 s = dstep_u8(&d0,&v0,&isend);
+    push_u8(&d,s);
+    estep_null(&e1,s);
+  }
+
+  detach(&d,(void**)out,nout);
+  { void *b;
+    detach(&e1.d,&b,NULL);
+    if(b) free(b);
+  }
+  free_internal(&d0);
+  free_internal(&e1);
+}
+
+#define DEFN_VENCODE(T) \
+void vencode_##T(u8 **out, size_t *nout, size_t noutsym, T *in, size_t nin, size_t ninsym, real *cdf) \
+{ u8 *t=NULL;                                          \
+  size_t i,n=0;                                        \
+  real *tcdf;                                          \
+  TRY( tcdf=malloc(sizeof(*tcdf)*(noutsym+1)) );       \
+  { size_t i;                                          \
+    real v = 1.0/(real)noutsym;                        \
+    for(i=0;i<=noutsym;++i)                            \
+      tcdf[i] = i*v;                                   \
+  }                                                    \
+  { void *buf=0;                                       \
+    n = 0;                                             \
+    encode_u8_##T(&buf,&n,in,nin,cdf,ninsym);          \
+    vdecode1(out,nout,buf,n,cdf,ninsym,tcdf,noutsym);  \
+    free(buf);                                         \
+  }                                                    \
+  free(tcdf);                                          \
+  return;                                              \
+Error:                                                 \
+  abort();                                             \
+}
+DEFN_VENCODE(u8);
+DEFN_VENCODE(u16);
+DEFN_VENCODE(u32);
+DEFN_VENCODE(u64);
+
+#define DEFN_VDECODE(T) \
+void vdecode_##T(T **out, size_t *nout, size_t noutsym, u8 *in, size_t nin, size_t ninsym, real *cdf) \
+{ u8 *t=NULL;                                          \
+  size_t i,n=0;                                        \
+  real *tcdf;                                          \
+  TRY( tcdf=malloc(sizeof(*tcdf)*(ninsym+1)) );        \
+  { size_t i;                                          \
+    real v = 1.0/(real)ninsym;                         \
+    for(i=0;i<=ninsym;++i)                             \
+      tcdf[i] = i*v;                                   \
+  }                                                    \
+  { void *buf=0;                                       \
+    n = 0;                                             \
+    encode_u8_u8(&buf,&n,in,nin,tcdf,ninsym);          \
+    decode_##T##_u8(out,nout,buf,n,cdf,noutsym);       \
+    free(buf);                                         \
+  }                                                    \
+  free(tcdf);                                          \
+  return;                                              \
+Error:                                                 \
+  abort();                                             \
+}
+DEFN_VDECODE(u8);
+DEFN_VDECODE(u16);
+DEFN_VDECODE(u32);
+DEFN_VDECODE(u64);

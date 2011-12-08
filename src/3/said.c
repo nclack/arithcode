@@ -421,6 +421,10 @@ void vdecode1(u8 **out, size_t *nout, u8 *in, size_t nin, real *cdf, size_t nsym
   init_u8(&d1,e1.d.d,e1.d.nbytes,cdf,nsym); // the  cdf decode /
 
   dprime_u8(&d0,&v0);
+  while(e1.d.ibyte<nin)                     // stop decoding when reencoding reproduces the input string
+    estep_u8(&e1,dstep(&d0,&v0,&isend));    // FIXME: if this works, e1 doesn't need to actually store any data...could be a trash stream
+
+#if 0 // doesn't work
   for(i=0;i<32;++i)
   { buf[i]=dstep_u8(&d0,&v0,&isend); //ignore isend here, decode first 32 symbols (some may be garbage)
     estep_u8(&e1,buf[i]);            //push them onto the next encoder stage
@@ -437,14 +441,15 @@ void vdecode1(u8 **out, size_t *nout, u8 *in, size_t nin, real *cdf, size_t nsym
     sync(&d1.d,&e1.d);               //make sure pointer for the second decoder stage is synced
     dstep_u8(&d1,&v1,&isend);         
   }
+#endif
   // d1.d.ibyte is the number of encoded symbols required
   detach(&d,(void**)out,nout);
   // FIXME: Still don't know how to reliably get <nout>
+  // ** SEE NOTES
+  //
   //        Why is d.ibyte always equal to <nin> from caller?
   //        e1.d.ibyte will be some significant fraction of <nin>...
   //            this is # of symbols put on encoder 
-  //            e1.d.ibyte is usually quite a bit larger than minimum required
-  //                       symbols
   //        d1.d.ibyte is number of symbols taken off of e1
   //
   //        d : 798
@@ -453,13 +458,13 @@ void vdecode1(u8 **out, size_t *nout, u8 *in, size_t nin, real *cdf, size_t nsym
   //        d1: 170
   //       act: 203 
   //
-  *nout = e1.d.ibyte; // number of e1 outputs needed to hit end symbol
+  *nout = d0.d.ibyte;
   { void *b;
     detach(&e1.d,&b,NULL);
     if(b) free(b);
   }
   free_internal(&d0);
-  free_internal(&d1);
+//free_internal(&d1);
   free_internal(&e1);
 }
 

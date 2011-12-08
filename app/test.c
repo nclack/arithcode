@@ -1,4 +1,4 @@
-#include "said.h"
+#include "ac.h"
 #include <stdio.h>
 
 #define countof(e) (sizeof(e)/sizeof(*(e)))
@@ -97,7 +97,7 @@ int main(int argc, char* argv[])
   size_t nout = 0,nt=countof(t);
 
   pmsg(s,countof(s));
-#if 1
+#if 0
   encode_u8_u32((void**)&out,&nout,s,countof(s),c,countof(c)-1);
   pcode(out,nout);
   printf("Compression: %3.2f%% (%llu bytes -> %llu bytes)"ENDL,100.0*nout/(double)sizeof(s),(u64)sizeof(s),(u64)nout);
@@ -114,7 +114,9 @@ int main(int argc, char* argv[])
     vdecode_u32(&t,&nt,countof(c)-1,out,nout,D ,c);
   }
 #endif
-  pmsg(t,nt);
+  if(nt != countof(s))
+    printf("*** Wrong symbol count. Got: %zu Expected: %zu"ENDL,nt,(size_t)countof(s));
+  pmsg(t,countof(s));
 
   free(out);
   free(t);
