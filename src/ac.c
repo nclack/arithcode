@@ -1,72 +1,221 @@
-/*
- * Introduction
- * ------------
- *
- * Implementation after Amir Said's Algorithm 22-29[1].
- *
- * Following Amir's notation, 
- *
- *  D is the number of symbols in the output alphabet.
- *  P is the number of output symbols in the active block (see Eq 2.3 in [1]).
- *    Need 2P for multiplication.
- *
- * So, have 2P*bitsof(D) = 64 (widest integer type I'll have access to)
- *
- * The smallest codable probabililty is p = D/D^P = D^(1-P).  Want to minimize
- * p wrt constraint. Enumerating the possibilities:
- *
- *   bitsof(D)  P                D^(1-P)
- *   --------   --               -------
- *   1          32                2^-32
- *   8          4    (2^8)^(-3) = 2^-24
- *   16         2                 2^-16
- *   32         1                 1
- *
- * One can see there's a efficiency verses precision trade off here (higher D
- * means less renormalizing and so better efficiency).
- *
- * I'll choose bitsof(D)=8 and P=4.
- *
- * Notes
- * -----
- * - Need to test more!
- *   - u1,u4,u16 encoding/decoding not tested
- *   - random sequences etc...
- *   - empty stream?
- *   - streams that generte big carries
- *
- * - Automatically insert an end-of-stream symbol.
- *   This adds a little to the overall length of the compressed string
- *   but it's very convenient.
- *
- *   It's not super clear to me what the minimum assignable probability
- *   should be. D^-P seems to work ok, but theoretically it should be 
- *   D^(1-P) (which is what it's set as now).
- *
- * - might be nice to add an interface that will encode chunks.  That is,
- *   you feed it symbols one at a time and every once in a while, when
- *   bits get settled, it outputs some bytes.
- *
- *   For streaming encoders, this would mean the intermediate buffer 
- *   wouldn't have to be quite as big, although worst case that
- *   buffer is the size of the entire output message.
- *
- * - A check-symbol could be encoded in a manner similar to the END-OF-MESSAGE
- *   symbol.  For example, code the symbol every 2^x symbols and assign it a
- *   probability of 2^-x.  If the decoder doesn't recieve one of these at the
- *   expected interval, then there was some error.  For short messages, 
- *   we wouldn't require the insertion of such a symbol; it's failure to show
- *   up after N symbols would still indicate an error.  It would take space
- *   on the interval, and so would have a negative impact on compression and 
- *   minimum probability.
- *   
- * References
- * ----------
- * [1]:  Said, A. “Introduction to Arithmetic Coding - Theory and Practice.” 
- *       Hewlett Packard Laboratories Report: 2004–2076.
- *       www.hpl.hp.com/techreports/2004/HPL-2004-76.pdf
- *
+/**   
+   \file
+   Arithmetic coding implementation
+
+   \section Introduction 
+  
+   Implementation after Amir Said's Algorithm 22-29[1].
+  
+   Following Amir's notation, 
+  
+    D is the number of symbols in the output alphabet.
+    P is the number of output symbols in the active block (see Eq 2.3 in [1]).
+      Need 2P for multiplication.
+  
+   So, have 2P*bitsof(D) = 64 (widest integer type I'll have access to)
+  
+   The smallest codable probabililty is p = D/D^P = D^(1-P).  Want to minimize
+   p wrt constraint. Enumerating the possibilities:
+  
+   \verbatim
+     bitsof(D)  P                D^(1-P)
+     --------   --               -------
+     1          32                2^-32
+     8          4    (2^8)^(-3) = 2^-24
+     16         2                 2^-16
+     32         1                 1
+   \endverbatim
+   
+   One can see there's a efficiency verses precision trade off here (higher D
+   means less renormalizing and so better efficiency).
+  
+   \section Notes
+   - Need to test more!
+     - u1,u4,u16 encoding/decoding not tested
+     - random sequences etc...
+     - empty stream?
+     - streams that generte big carries
+  
+   - might be nice to add an interface that will encode chunks.  That is,
+     you feed it symbols one at a time and every once in a while, when
+     bits get settled, it outputs some bytes.  
+     For streaming encoders, this would mean the intermediate buffer 
+     wouldn't have to be quite as big, although worst case that
+     buffer is the size of the entire output message.
+  
+   - A check-symbol could be encoded in a manner similar to the END-OF-MESSAGE
+     symbol.  For example, code the symbol every 2^x symbols and assign it a
+     probability of 2^-x.  If the decoder doesn't recieve one of these at the
+     expected interval, then there was some error.  For short messages, 
+     it wouldn't require the insertion of such a symbol; only failure to show
+     up after N symbols would indicate an error.  It would take space
+     on the interval, and so would have a negative impact on compression and 
+     minimum probability.
+     
+   \section References
+   \verbatim
+   [1]:  Said, A. "Introduction to Arithmetic Coding - Theory and Practice."
+         Hewlett Packard Laboratories Report: 2004-2076.
+         www.hpl.hp.com/techreports/2004/HPL-2004-76.pdf
+   \endverbatim
  */
+
+/** \mainpage Arithmetic Coding
+
+    \section Contents
+    
+    - \ref Example
+    - \ref Features
+    - \ref History
+    - \ref CDFs
+    - \ref Encoding
+    - \ref Decoding
+
+    \section Example
+    \code
+    void encode()
+    { unsigned char *input, *output=0;      // input and output buffer
+      size_t countof_input, countof_output; // number of symbols in input and output buffer
+      float *cdf=0;
+      size_t nsym;                          // number of symbols in the input alphabet
+      // somehow load the data into input array
+      cdf_build(&cdf,&nsym,input,countof_input);
+      encode_u1_u8(                         // encode unsigned chars to a string of bits (1 bit per output symbol)
+        (void**)&out,&countof_output,
+               input, countof_input,
+                 cdf, nsym);
+      // do something with the output
+      free(out);
+      free(cdf);
+    }
+    \endcode      
+
+    \section Features
+
+      - Encoding/decoding to/from variable symbol alphabets.
+
+      - Implicit use of a STOP symbol means that you don't need to know the number of symbols in the decoded message in order
+        to decode something.
+
+      - Can encoded messages stored as signed or unsigned chars, shorts, longs or long longs.  Keep in mind, however, that the
+        number of encodable symbols may be limiting.  You can't encode 2^64 different integers, sorry.
+
+      - Can encode to streams of variable symbol width; either 1,4,8, or 16 bits.  There is are two tradeoffs here.
+
+          - Smaller bit-width (e.g. 1) give better compression than larger bit-width (e.g. 16), but compression is slower (I think?).
+
+          - The implimentation puts a limit on the smallest probability of an encoded symbol.  Smaller bit-width (e.g. 1) can accomidate
+            a larger range of probabilities than large bit-width (e.g. 16).
+
+    \todo Markov chain adaptive encoding/decoding.
+
+    \section History History and Caveats
+
+    I wrote this in order to learn about arithmetic coding.  The end goal was to get to the point where I had an adaptive
+    encoder/decoder that could compress markov chains.  I got a little distracted along the way by trying to encode to
+    a variable symbol alphabet.  Variable symbol encoding alphabets are fun because you can encode to non-whitespace ASCII 
+    characters (94 symbols) and that means the encoded message can be embeded in a text file format.
+
+    Arithmetic coding is a computationally expensive coding method.  I've done nothing to address this problem; I've probably
+    made it worse.
+
+    To learn more about arithmetic coding see this excelent reference:
+    \verbatim
+    Said, A. “Introduction to Arithmetic Coding - Theory and Practice.” 
+         Hewlett Packard Laboratories Report: 2004–2076.
+         www.hpl.hp.com/techreports/2004/HPL-2004-76.pdf
+   \endverbatim
+
+    \section CDFs Cumulative Distribution Functions (CDFs)
+
+    All the encoding and decoding functions require knowledge of the probability of observing input symbols.  This probability is
+    specified as a CDF of a particular form.
+    Namely:
+
+      1. \c cdf[0] must be zero (0.0).
+
+      2. The probability density for symbol \a i should be \c cdf[i+1]-cdf[i].
+
+    This implies, for an alphabet with \a M symbols:
+
+      - \a cdf has \a M+1 elements.
+
+      - \c cdf[M] is 1.0 (within floating point precision)
+
+    \see cdf_build() for an example of how to build a CDF from a given input message.
+
+    \section Encoding Encoding Functions
+
+    Encoding functions all have the same form:
+    \code
+    encode_<TDst>_<TSrc>(void **out, size_t *nout, uint8_t *in, size_t nin, float *cdf, size_t nsym);
+    \endcode
+    where \a TDst and \a TSrc are the output and input types, respectively.  The output buffer, \a *out, 
+    can be an heap-allocated buffer; it's capacity in bytes should be passed as \a *nout.  If \a *out is 
+    not large enough (or NULL), it will be reallocated.  The new capacity will be returned in \a *nout.
+
+    - encode_u1_u8()
+    - encode_u4_u8()
+    - encode_u8_u8()
+    - encode_u1_u16()
+    - encode_u4_u16()
+    - encode_u8_u16()
+    - encode_u1_u32()
+    - encode_u4_u32()
+    - encode_u8_u32()
+    - encode_u1_u64()
+    - encode_u4_u64()
+    - encode_u8_u64()
+
+    Variable symbol encodings are a little different.  These functions take the number of output symbols, \a noutsym,
+    as well.  They always encode to a 1-byte stream.  Their form is:
+    \code
+    vencode_<TSrc>(void **out, size_t *nout, size_t noutsym, uint8_t *in, size_t nin, size_t ninsym, float *cdf);
+    \endcode
+
+    - vencode_u8()
+    - vencode_u16()
+    - vencode_u32()
+    - vencode_u64()
+
+    \section Decoding Decoding functions
+
+    Decoding functions all have the same form:
+    \code
+    decode_<TDst>_<TSrc>(void **out, size_t *nout, uint8_t *in, size_t nin, float *cdf, size_t nsym);
+    \endcode
+    where \a TDst and \a TSrc are the output and input types, respectively.  The output buffer, \a *out, 
+    can be an heap-allocated buffer; it's capacity in bytes should be passed as \a *nout.  If \a *out is 
+    not large enough (or NULL), it will be reallocated.  The new capacity will be returned in \a *nout.
+
+    This is basically identical to the encode functions, but here "output" refers to the decoded message
+    and "input" refers to an encoded message.
+
+    - decode_u8_u1()
+    - decode_u8_u4()
+    - decode_u8_u8()
+    - decode_u16_u1()
+    - decode_u16_u4()
+    - decode_u16_u8()
+    - decode_u32_u1()
+    - decode_u32_u4()
+    - decode_u32_u8()
+    - decode_u64_u1()
+    - decode_u64_u4()
+    - decode_u64_u8()
+
+    Variable symbol decoding has the form:
+    \code
+    vdecode_<TDst>(void **out, size_t *nout, size_t noutsym, uint8_t *in, size_t nin, size_t ninsym, float *cdf);
+    \endcode
+
+    - vdecode_u8()
+    - vdecode_u16()
+    - vdecode_u32()
+    - vdecode_u64() 
+
+    \author Nathan Clack <https://github.com/nclack>
+*/
 
 #include <stdio.h>
 #include <string.h>
@@ -88,18 +237,31 @@ typedef float     real;
 
 #define SAFE_FREE(e) if(e) { free(e); (e)=NULL; }
 
-//
-// Encoder/Decoder state
-//
+/** 
+    \defgroup ArithmeticCoding Arithmetic Coding Internals    
+    @{
+ */
+
+/**
+ Encoder/Decoder state
+
+ Used internally. Not externally visible.
+ */
 
 typedef struct _state_t
-{ u64      b,l,v;
-  stream_t d;
-  size_t   nsym;
-  u64      D,shift,mask,lowl;
-  u64     *cdf;
+{ u64      b,       ///< Beginning of the current interval.
+           l,       ///< Length of the current interval.
+           v;       ///< Current value.
+  stream_t d;       ///< The attached data stream.
+  size_t   nsym;    ///< The number of symbols in the input alphabet.
+  u64      D,       ///< The number of symbols in the output alphabet.
+           shift,   ///< A utility constant.  log2(D^P) - need 2P to fit in a register for multiplies.
+           mask,    ///< Masks the live bits (can't remember exactly?)
+           lowl;    ///< The minimum length of an encodable interval.
+  u64     *cdf;     ///< The cdf associated with the input alphabet.  Must be an array of N+1 symbols.
 } state_t;
 
+/// A helper function that initializes the parts of the \ref state_t structure that do not depend on stream type.
 static void init_common(state_t *state,u8 *buf,size_t nbuf,real *cdf,size_t nsym)
 { 
   
@@ -124,6 +286,7 @@ static void init_common(state_t *state,u8 *buf,size_t nbuf,real *cdf,size_t nsym
 Error:
   abort();
 }
+/// Initialize the state_t structure for \c u1 streams.
 static void init_u1(state_t *state,u8 *buf,size_t nbuf,real *cdf,size_t nsym)
 { memset(state,0,sizeof(*state));
   state->D     = 2;
@@ -131,6 +294,7 @@ static void init_u1(state_t *state,u8 *buf,size_t nbuf,real *cdf,size_t nsym)
   state->lowl  = 1ULL<<31; // 2^(shift - log2(D))
   init_common(state,buf,nbuf,cdf,nsym);
 }
+/// Initialize the state_t structure for \c u4 streams.
 static void init_u4(state_t *state,u8 *buf,size_t nbuf,real *cdf,size_t nsym)
 { memset(state,0,sizeof(*state));
   state->D     = 1ULL<<4;
@@ -138,6 +302,7 @@ static void init_u4(state_t *state,u8 *buf,size_t nbuf,real *cdf,size_t nsym)
   state->lowl  = 1ULL<<28; // 2^(shift - log2(D))
   init_common(state,buf,nbuf,cdf,nsym);
 }
+/// Initialize the state_t structure for \c u8 streams.
 static void init_u8(state_t *state,u8 *buf,size_t nbuf,real *cdf,size_t nsym)
 { memset(state,0,sizeof(*state));
   state->D     = 1ULL<<8;
@@ -145,6 +310,7 @@ static void init_u8(state_t *state,u8 *buf,size_t nbuf,real *cdf,size_t nsym)
   state->lowl  = 1ULL<<24; // 2^(shift - log2(D))
   init_common(state,buf,nbuf,cdf,nsym);
 }
+/// Initialize the state_t structure for \c u16 streams.
 static void init_u16(state_t *state,u8 *buf,size_t nbuf,real *cdf,size_t nsym)
 { memset(state,0,sizeof(*state));
   state->D     = 1ULL<<16;
@@ -152,7 +318,7 @@ static void init_u16(state_t *state,u8 *buf,size_t nbuf,real *cdf,size_t nsym)
   state->lowl  = 1ULL<<16; // 2^(shift - log2(D))
   init_common(state,buf,nbuf*2,cdf,nsym);
 }
-
+/// Releases resources held by the state_t structure.
 static  void free_internal(state_t *state)
 { void *d;
   SAFE_FREE(state->cdf);
@@ -163,6 +329,8 @@ static  void free_internal(state_t *state)
 //
 // Build CDF
 // 
+
+/// Array maximum.  \returns the maximum value in a u32 array, \a s, with \a n elements.
 static u32 maximum(u32 *s, size_t n)
 { u32 max=0;
   while(n--)
@@ -170,6 +338,30 @@ static u32 maximum(u32 *s, size_t n)
   return max;
 }
 
+/** 
+Build a cumulative distribution function (CDF) from an input u32 array.
+
+As provided, this really just serves as a reference implementation showing how
+the CDF should be computed.
+Namely:
+
+  1. \c cdf[0] must be zero (0.0).
+
+  2. The probability density for symbol \a i should be \c cdf[i+1]-cdf[i].
+
+This implies:
+
+  - \a cdf has \a M+1 elements.
+
+  - \c cdf[(*M)+1]==1.0 (within floating point precision)
+
+\param[in,out] cdf The cumulative distribution function computed over \a s.
+                   If *cdf is not null, will realloc() if necessary.
+\param[out]    M   The number of symbols in the array \a s.
+\param[in]     s   The input message formated as a \c u32 array of \a N elements.
+\param[in]     N   The number of elements in the array \a s.
+
+*/
 void cdf_build(real **cdf, size_t *M, u32 *s, size_t N)
 { size_t i,nbytes;
   *M = maximum(s,N)+1; 
@@ -402,12 +594,7 @@ DEFN_DECODE_OUTS(u16);
 //
 // Variable output alphabet encoding
 //
-//
-// can't quite do the whole thing symbol by symbol 
-// due to carries.  Ideally, I'd output a settled
-// symbol from the encoder when I could.  The carry
-// might not happen till the end though...that would
-// be the whole message!
+
 void sync(stream_t *dest, stream_t *src)
 { dest->d      = src->d;
   dest->nbytes = src->nbytes;
@@ -490,3 +677,5 @@ DEFN_VDECODE(u8);
 DEFN_VDECODE(u16);
 DEFN_VDECODE(u32);
 DEFN_VDECODE(u64);
+
+/** @} */ //end addtogroup ac

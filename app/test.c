@@ -1,3 +1,5 @@
+/// \file
+/// An simple demonstration.
 #include "ac.h"
 #include <stdio.h>
 
@@ -6,6 +8,7 @@
 #define ENDL "\n"
 typedef unsigned long long u64;
 
+/// Prints out the encoded message using hex codes
 void pcode(u8 *out, size_t nout)
 { size_t i,j;
   printf("Code:\n");
@@ -18,6 +21,7 @@ void pcode(u8 *out, size_t nout)
   printf("--\n");
 }
 
+/// Prints out the encoded message using characters
 void pascii(u8 *out, size_t nout)
 { size_t i,j;
   printf("Code:\n");
@@ -30,6 +34,7 @@ void pascii(u8 *out, size_t nout)
   printf("--\n");
 }
 
+/// Prints decoded the message string.
 void pmsg(u32 *v,size_t n)
 { size_t i,j;
   printf("Message: %p\n",v);
@@ -42,6 +47,7 @@ void pmsg(u32 *v,size_t n)
   printf("--\n");
 }
 
+/// A simple demo
 int main(int argc, char* argv[])
 { u32  s[] = {2,1,0,0,0,0,0,0,0,0,0,0,3,3,2,3,2,1,0,
               2,1,0,0,0,0,0,0,0,0,0,0,3,3,2,3,2,1,0, 

@@ -42,6 +42,8 @@ typedef float     real;
 
 void cdf_build(real **cdf, size_t *nsym, u32 *s, size_t ns);
 
+/// \defgroup Encoding Encoding functions
+/// @{
 // encode_<Tout>_<Tin>
 // - Tout: u1,u4,u8,u16
 // - Tin : u8,u16,u32,u64
@@ -66,7 +68,10 @@ void encode_u16_u8 (void **out, size_t *nout, uint8_t *in, size_t nin, real *cdf
 void encode_u16_u16 (void **out, size_t *nout, uint16_t  *in, size_t nin, real *cdf, size_t nsym);
 void encode_u16_u32 (void **out, size_t *nout, uint32_t *in, size_t nin, real *cdf, size_t nsym);
 void encode_u16_u64 (void **out, size_t *nout, uint64_t *in, size_t nin, real *cdf, size_t nsym);
+/// @}
 
+/// \defgroup Decoding Decoding functions
+/// @{
 // decode_<Tout>_<Tin>
 // - Tout: u8,u16,u32,u64
 // - Tin : u1,u4,u8,u16
@@ -91,7 +96,11 @@ void decode_u8_u16(uint8_t **out, size_t *nout, void *in, size_t nin, real *cdf,
 void decode_u16_u16(uint16_t **out, size_t *nout, void *in, size_t nin, real *cdf, size_t nsym);
 void decode_u32_u16(uint32_t **out, size_t *nout, void *in, size_t nin, real *cdf, size_t nsym);
 void decode_u64_u16(uint64_t **out, size_t *nout, void *in, size_t nin, real *cdf, size_t nsym);
+/// @}
 
+
+/// \defgroup Variable Variable alphabet codings
+/// @{
 //
 // Variably sized encoding alphabet
 //
@@ -105,6 +114,7 @@ void vdecode_u8 (uint8_t  **out, size_t *nout, size_t noutsym, uint8_t  *in, siz
 void vdecode_u16(uint16_t **out, size_t *nout, size_t noutsym, uint8_t  *in, size_t nin, size_t ninsym, real *cdf);
 void vdecode_u32(uint32_t **out, size_t *nout, size_t noutsym, uint8_t  *in, size_t nin, size_t ninsym, real *cdf);
 void vdecode_u64(uint64_t **out, size_t *nout, size_t noutsym, uint8_t  *in, size_t nin, size_t ninsym, real *cdf);
+/// @}
 #ifdef __cplusplus
 }
 #endif

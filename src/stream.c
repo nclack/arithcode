@@ -2,7 +2,7 @@
 
 #include <stdint.h> // for fixed width integer types
 #include <stdlib.h> // for size_t
-#include <stdio.h>  // for exception handling
+#include <stdio.h>  // for exception logging
 #include <string.h> // for memset
 
 typedef uint8_t   u8;
@@ -78,9 +78,10 @@ void push_u1(stream_t *self, u8 v)
 { 
   self->mask = 1<<(7-self->ibit); // index from the high bit so we can use integer addition to do carries
   //set
-  u8 *w = self->d+self->ibyte,
-      m = self->mask;
-  *w = (*w & ~m) | (-(v) & m);
+  { u8 *w = self->d+self->ibyte,
+        m = self->mask;
+    *w = (*w & ~m) | (-(v) & m);
+  }
   //inc
   if(self->ibit==7)
   { self->ibit=0;
@@ -95,9 +96,10 @@ void push_u4(stream_t *self, u8 v)
 { 
   self->mask = (self->ibit==0)?0xf0:0x0f ; // index from the high bit so we can use integer addition to do carries
   //set
-  u8 *w = self->d+self->ibyte,
-      m = self->mask;
-  *w ^= (*w^ (v<<(4-self->ibit)) )&m;
+  { u8 *w = self->d+self->ibyte,
+        m = self->mask;
+    *w ^= (*w^ (v<<(4-self->ibit)) )&m;
+  }
   //inc
   if(self->ibit==4)
   { self->ibit=0;
