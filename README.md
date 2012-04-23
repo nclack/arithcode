@@ -5,7 +5,7 @@
 Implementation after Amir Said's Algorithms 22-29([1]).  This was mostly a
 learning excersize.  It hasn't been optimized.
 
-[1]:  www.hpl.hp.com/techreports/2004/HPL-2004-76.pdf
+[1]:  http://www.hpl.hp.com/techreports/2004/HPL-2004-76.pdf
       Said, A. "Introduction to Arithmetic Coding - Theory and Practice."
       Hewlett Packard Laboratories Report: 2004-2076.
       
