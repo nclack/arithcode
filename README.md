@@ -2,29 +2,13 @@
 
 ## Introduction
 
-Implementation after Amir Said's Algorithm 22-29[1].  This was mostly a
+Implementation after Amir Said's Algorithms 22-29([1]).  This was mostly a
 learning excersize.  It hasn't been optimized.
 
-## Example
-
-```
-void encode()
-{ unsigned char *input, *output=0;      // input and output buffer
-  size_t countof_input, countof_output; // number of symbols in input and output buffer
-  float *cdf=0;
-  size_t nsym;                          // number of symbols in the input alphabet
-  // somehow load the data into input array
-  cdf_build(&cdf,&nsym,input,countof_input);
-  encode_u1_u8(                         // encode unsigned chars to a string of bits (1 bit per output symbol)
-    (void**)&out,&countof_output,
-            input, countof_input,
-              cdf, nsym);
-  // do something with the output
-  free(out);
-  free(cdf);
-}
-```
-
+[1]:  www.hpl.hp.com/techreports/2004/HPL-2004-76.pdf
+      Said, A. "Introduction to Arithmetic Coding - Theory and Practice."
+      Hewlett Packard Laboratories Report: 2004-2076.
+      
 ## Features
 
   - Encoding/decoding to/from variable symbol alphabets.
@@ -41,8 +25,26 @@ void encode()
 
       - The implimentation puts a limit on the smallest probability of an encoded symbol.  Smaller bit-width (e.g. 1) can accomidate
         a larger range of probabilities than large bit-width (e.g. 16).
+        
+## Example
 
-[1]:  www.hpl.hp.com/techreports/2004/HPL-2004-76.pdf
-      Said, A. "Introduction to Arithmetic Coding - Theory and Practice."
-      Hewlett Packard Laboratories Report: 2004-2076.
+```C
+void encode()
+{ unsigned char *input, *output=0;      // input and output buffer
+  size_t countof_input, countof_output; // number of symbols in input and output buffer
+  float *cdf=0;
+  size_t nsym;                          // number of symbols in the input alphabet
+  // somehow load the data into input array
+  cdf_build(&cdf,&nsym,input,countof_input);
+  encode_u1_u8(                         // encode unsigned chars to a string of bits (1 bit per output symbol)
+    (void**)&out,&countof_output,
+            input, countof_input,
+              cdf, nsym);
+  // do something with the output
+  free(out);
+  free(cdf);
+}
+```        
+
+
       
