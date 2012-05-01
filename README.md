@@ -38,8 +38,8 @@ void encode()
   cdf_build(&cdf,&nsym,input,countof_input);
   encode_u1_u8(                         // encode unsigned chars to a string of bits (1 bit per output symbol)
     (void**)&out,&countof_output,
-            input, countof_input,
-              cdf, nsym);
+           input, countof_input,
+             cdf, nsym);
   // do something with the output
   free(out);
   free(cdf);
