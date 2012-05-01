@@ -35,7 +35,7 @@ void encode()
   float *cdf=0;
   size_t nsym;                          // number of symbols in the input alphabet
   // somehow load the data into input array
-  cdf_build(&cdf,&nsym,input,countof_input);
+  cdf_build(&cdf,&nsym,input,countof_input);  // get the symbol statistics
   encode_u1_u8(                         // encode unsigned chars to a string of bits (1 bit per output symbol)
     (void**)&out,&countof_output,
            input, countof_input,
