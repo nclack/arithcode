@@ -3,7 +3,7 @@
 ## Introduction
 
 Implementation after Amir Said's Algorithms 22-29([1]).  This was mostly a
-learning excersise.  It hasn't been optimized.
+learning exercise.  It hasn't been optimized.
 
 [1]:  http://www.hpl.hp.com/techreports/2004/HPL-2004-76.pdf
       Said, A. "Introduction to Arithmetic Coding - Theory and Practice."
