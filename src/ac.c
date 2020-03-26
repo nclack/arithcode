@@ -368,7 +368,7 @@ void cdf_build(real **cdf, size_t *M, u32 *s, size_t N)
   TRY( *cdf=realloc(*cdf,nbytes=sizeof(real)*(M[0]+1)) ); // cdf has M+1 elements
   memset(*cdf,0,nbytes);
   for(i=0;i<     N;++i) cdf[0][s[i]]++;                   // histogram
-  for(i=0;i<M[0]  ;++i) cdf[0][s[i]]/=(real)N;            // norm
+  for(i=0;i<M[0]  ;++i) cdf[0][i]/=(real)N;               // norm
   for(i=1;i<M[0]  ;++i) cdf[0][i]   += cdf[0][i-1];       // cumsum
   for(i=M[0]+1;i>0;--i) cdf[0][i]    = cdf[0][i-1];       // move
   cdf[0][0] = 0.0;

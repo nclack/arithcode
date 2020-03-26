@@ -10,19 +10,22 @@ set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
 
 include_directories(src)
 
+find_package(Threads)
+
 ###############################################################################
 #  Targets
 ###############################################################################
 
   file(GLOB SOURCES src/*.h src/*.c)
   add_executable(eg app/test.c ${SOURCES})
+  target_link_libraries(eg Threads::Threads)
 
 ###############################################################################
 #  Testing
 ###############################################################################
 
 set(GTEST_ROOT ~/src/3rdParty/gtest-1.6.0 CACHE PATH "The root directory of the gtest install prefix")
-find_package(gtest)
+find_package(GTest)
 if(GTEST_FOUND)
   enable_testing()
   include_directories(${GTEST_INCLUDE_DIRS})
@@ -31,7 +34,7 @@ if(GTEST_FOUND)
     ${TEST_SOURCES}
     ${SOURCES}
     )
-  target_link_libraries(alltests ${GTEST_BOTH_LIBRARIES})
+  target_link_libraries(alltests ${GTEST_BOTH_LIBRARIES} Threads::Threads)
   add_test(AllTests alltests)
 endif()
 
