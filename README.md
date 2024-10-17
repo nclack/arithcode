@@ -16,14 +16,14 @@ learning exercise.  It hasn't been optimized.
   - Implicit use of a STOP symbol means that you don't need to know the number of symbols in the decoded message in order
     to decode something.
 
-  - Can encoded messages stored as signed or unsigned chars, shorts, longs or long longs.  Keep in mind, however, that the
-    number of encodable symbols may be limiting.  You can't encode 2^64 different integers, sorry.
+  - Encode messages stored as signed or unsigned chars, shorts, longs or long longs. Keep in mind, however, that the
+    number of encodable symbols may be limiting.
 
-  - Can encode to streams of variable symbol width; either 1,4,8, or 16 bits.  There is are two tradeoffs here.
+  - Encode to streams of variable symbol width; either 1,4,8, or 16 bits. There are two tradeoffs here.
 
-      - Smaller bit-width (e.g. 1) give better compression than larger bit-width (e.g. 16), but compression is slower (I think?).
+      - Smaller bit-width (e.g. 1) gives better compression than larger bit-width (e.g. 16), but compression is slower (I think?).
 
-      - The implimentation puts a limit on the smallest probability of an encoded symbol.  Smaller bit-width (e.g. 1) can accomidate
+      - The implementation limits the smallest probability of an encoded symbol.  Smaller bit-width (e.g. 1) can accommodate
         a larger range of probabilities than large bit-width (e.g. 16).
         
 ## Example
@@ -34,7 +34,7 @@ void encode()
   size_t countof_input, countof_output; // number of symbols in input and output buffer
   float *cdf=0;
   size_t nsym;                          // number of symbols in the input alphabet
-  // somehow load the data into input array
+  // somehow load the data into the input array
   cdf_build(&cdf,&nsym,input,countof_input);  // get the symbol statistics
   encode_u1_u8(                         // encode unsigned chars to a string of bits (1 bit per output symbol)
     (void**)&out,&countof_output,
